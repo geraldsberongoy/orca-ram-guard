@@ -159,6 +159,32 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn get_booted_simulators() -> Vec<(String, String)> {
+    let Ok(out) = Command::new("xcrun")
+        .args(["simctl", "list", "devices", "booted"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut sims = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.ends_with("(Booted)") {
+            // Format: "iPhone 17 (736D8771-F8E4-4373-B9B6-EAD21B2E4144) (Booted)"
+            let without_booted = trimmed.trim_end_matches("(Booted)").trim();
+            if let Some((name, rest)) = without_booted.rsplit_once('(') {
+                let udid = rest.trim_end_matches(')').trim().to_string();
+                let clean_name = name.trim().to_string();
+                if !udid.is_empty() {
+                    sims.push((clean_name, udid));
+                }
+            }
+        }
+    }
+    sims
+}
+
 fn run_ram_check(force_dialog: bool, dry_run: bool, min_idle_mins: u64, min_heavy_mb: u64, min_total_idle_mb: u64) {
     let Some(mem_raw) = run_orca_json(&["diagnostics", "memory"]) else {
         return;
@@ -252,6 +278,21 @@ fn run_ram_check(force_dialog: bool, dry_run: bool, min_idle_mins: u64, min_heav
                 orphaned: is_orphaned,
             });
         }
+    }
+
+    // Also include booted iOS Simulators (~550 MB each in SimRenderServer + SimMetalHost + SpringBoard)
+    for (sim_name, udid) in get_booted_simulators() {
+        let est_mb = 550u64;
+        candidates.push(CandidateTerminal {
+            handle: format!("sim:{udid}"),
+            worktree_name: "iOS Simulator".to_string(),
+            title: sim_name,
+            agent: "simctl".to_string(),
+            mem_bytes: est_mb * 1024 * 1024,
+            mem_mb: est_mb,
+            idle_mins: 999,
+            orphaned: true,
+        });
     }
 
     candidates.sort_by(|a, b| b.mem_bytes.cmp(&a.mem_bytes));
@@ -355,9 +396,15 @@ fn run_ram_check(force_dialog: bool, dry_run: bool, min_idle_mins: u64, min_heav
     for line in output_str.lines() {
         let trimmed = line.trim();
         if let Some(target) = label_to_candidate.get(trimmed) {
-            let status = Command::new(orca_bin())
-                .args(["terminal", "close", "--terminal", &target.handle, "--json"])
-                .status();
+            let status = if let Some(udid) = target.handle.strip_prefix("sim:") {
+                Command::new("xcrun")
+                    .args(["simctl", "shutdown", udid])
+                    .status()
+            } else {
+                Command::new(orca_bin())
+                    .args(["terminal", "close", "--terminal", &target.handle, "--json"])
+                    .status()
+            };
             if status.map(|s| s.success()).unwrap_or(false) {
                 closed_count += 1;
                 freed_mb += target.mem_mb;
