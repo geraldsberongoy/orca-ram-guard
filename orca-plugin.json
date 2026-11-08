@@ -1,0 +1,51 @@
+{
+  "manifestVersion": 2,
+  "id": "orca-ram-guard",
+  "name": "Orca RAM & Port Guard",
+  "version": "0.2.0",
+  "description": "Monitors Orca memory, idle terminals, and active dev-server ports in the status bar with 1-click multi-select cleanup.",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.mjs",
+  "contributes": {
+    "statusBarItems": [
+      {
+        "id": "ram-status",
+        "text": "RAM: scanning…",
+        "icon": "gauge",
+        "tone": "neutral",
+        "tooltip": "Click to choose and close idle Orca terminals",
+        "command": "ramGuard.promptCleanup"
+      },
+      {
+        "id": "port-status",
+        "text": "Ports: 0",
+        "icon": "plug",
+        "tone": "neutral",
+        "tooltip": "Click to inspect or kill active dev-server ports",
+        "command": "ramGuard.promptPortCleanup"
+      }
+    ],
+    "commands": [
+      {
+        "id": "ramGuard.promptCleanup",
+        "title": "Orca RAM Guard: Choose & Close Idle Terminals"
+      },
+      {
+        "id": "ramGuard.promptPortCleanup",
+        "title": "Orca Port Guard: Choose & Kill Active Dev Ports"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "notifications:show"
+    },
+    {
+      "kind": "storage:own"
+    }
+  ]
+}
