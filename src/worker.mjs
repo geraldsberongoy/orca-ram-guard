@@ -5,8 +5,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CHECK_SCRIPT = join(PLUGIN_ROOT, 'orca-ram-guard-check.mjs');
-const PORT_SCRIPT = join(PLUGIN_ROOT, 'orca-port-guard-check.mjs');
+const RUST_BIN = join(PLUGIN_ROOT, 'bin', 'orca-ram-guard');
 
 const POLL_INTERVAL_MS = 60 * 1000; // Update status bar every 60s
 const ALERT_COOLDOWN_MS = 20 * 60 * 1000; // Auto-notify at most once every 20 mins
@@ -18,8 +17,8 @@ let lastAlertAt = 0;
 async function scanMemory() {
   try {
     const { stdout } = await execFileAsync(
-      process.execPath,
-      [CHECK_SCRIPT, '--dry-run', '--min-idle-mins=15', '--min-heavy-mb=40'],
+      RUST_BIN,
+      ['--dry-run', '--min-idle-mins=15', '--min-heavy-mb=40'],
       { timeout: 10000 }
     );
     return JSON.parse(stdout);
@@ -31,8 +30,8 @@ async function scanMemory() {
 async function scanPorts() {
   try {
     const { stdout } = await execFileAsync(
-      process.execPath,
-      [PORT_SCRIPT, '--dry-run'],
+      RUST_BIN,
+      ['ports', '--dry-run'],
       { timeout: 10000 }
     );
     return JSON.parse(stdout);
@@ -62,8 +61,8 @@ export default function activate(orca) {
         .join(' | ');
 
       const tooltip = hasHeavyIdle
-        ? `Click to choose & close idle terminals (~${reclaimableMb} MB across ${candidateCount} idle): ${topDetails}`
-        : `Orca total footprint: ${totalOrcaMemoryGb}. Click to check idle terminals.`;
+        ? `[Rust] Click to choose & close idle terminals (~${reclaimableMb} MB across ${candidateCount} idle): ${topDetails}`
+        : `[Rust] Orca total footprint: ${totalOrcaMemoryGb}. Click to check idle terminals.`;
 
       try {
         await orca.host.call('statusBar.update', {
@@ -107,8 +106,8 @@ export default function activate(orca) {
       const portTone = activePortCount >= 3 ? 'warning' : 'neutral';
       const portTooltip =
         activePortCount > 0
-          ? `Click to choose & stop active ports: ${portListStr}`
-          : 'No active dev servers or listening user ports detected.';
+          ? `[Rust] Click to choose & stop active ports: ${portListStr}`
+          : '[Rust] No active dev servers or listening user ports detected.';
 
       try {
         await orca.host.call('statusBar.update', {
@@ -128,8 +127,8 @@ export default function activate(orca) {
   orca.commands.register('ramGuard.promptCleanup', async () => {
     try {
       await execFileAsync(
-        process.execPath,
-        [CHECK_SCRIPT, '--force-dialog', '--min-idle-mins=10', '--min-heavy-mb=40'],
+        RUST_BIN,
+        ['--force-dialog', '--min-idle-mins=10', '--min-heavy-mb=40'],
         { timeout: 65000 }
       );
     } catch {
@@ -140,7 +139,7 @@ export default function activate(orca) {
 
   orca.commands.register('ramGuard.promptPortCleanup', async () => {
     try {
-      await execFileAsync(process.execPath, [PORT_SCRIPT], { timeout: 65000 });
+      await execFileAsync(RUST_BIN, ['ports'], { timeout: 65000 });
     } catch {
       // dialog timed out or cancelled
     }

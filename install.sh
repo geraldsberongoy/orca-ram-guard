@@ -2,14 +2,22 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NODE_BIN="$(command -v node)"
 ORCA_BIN="${ORCA_CLI_COMMAND:-$(command -v orca || echo "/Applications/Orca.app/Contents/Resources/bin/orca")}"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.orca.ram-guard.plist"
+RUST_BIN="$REPO_DIR/bin/orca-ram-guard"
 
-echo "🔧 Installing Orca RAM & Port Guard from: $REPO_DIR"
-chmod +x "$REPO_DIR/orca-ram-guard-check.mjs" "$REPO_DIR/orca-port-guard-check.mjs"
+echo "🦀 Building native Rust binary for Orca RAM & Port Guard..."
+if command -v cargo >/dev/null 2>&1; then
+  (cd "$REPO_DIR" && cargo build --release && mkdir -p bin && cp target/release/orca-ram-guard "$RUST_BIN")
+elif [ -x "$HOME/.cargo/bin/cargo" ]; then
+  (cd "$REPO_DIR" && "$HOME/.cargo/bin/cargo" build --release && mkdir -p bin && cp target/release/orca-ram-guard "$RUST_BIN")
+elif [ ! -x "$RUST_BIN" ]; then
+  echo "❌ Rust (cargo) not found and prebuilt binary not present at $RUST_BIN"
+  exit 1
+fi
+chmod +x "$RUST_BIN"
 
-# 1. Install macOS LaunchAgent (runs every 20 minutes)
+# 1. Install macOS LaunchAgent (runs native Rust binary every 20 minutes — zero Node.js overhead)
 mkdir -p "$HOME/Library/LaunchAgents"
 cat <<EOF > "$PLIST_PATH"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,8 +28,7 @@ cat <<EOF > "$PLIST_PATH"
   <string>com.orca.ram-guard</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$NODE_BIN</string>
-    <string>$REPO_DIR/orca-ram-guard-check.mjs</string>
+    <string>$RUST_BIN</string>
     <string>--min-idle-mins=20</string>
     <string>--min-heavy-mb=40</string>
     <string>--min-total-idle-mb=150</string>
@@ -40,7 +47,7 @@ EOF
 
 launchctl unload "$PLIST_PATH" 2>/dev/null || true
 launchctl load "$PLIST_PATH"
-echo "✅ Loaded macOS LaunchAgent: $PLIST_PATH"
+echo "✅ Loaded macOS LaunchAgent (native Rust binary): $PLIST_PATH"
 
 # 2. Load the Orca Status-Bar Plugin
 echo "🔌 Loading Orca status-bar plugin..."
@@ -66,6 +73,6 @@ else
 fi
 
 echo ""
-echo "🎉 Setup complete! Try running:"
-echo "  node \"$REPO_DIR/orca-ram-guard-check.mjs\" --force-dialog"
-echo "  node \"$REPO_DIR/orca-port-guard-check.mjs\""
+echo "🎉 Rust Setup complete! Try running:"
+echo "  \"$RUST_BIN\" --force-dialog"
+echo "  \"$RUST_BIN\" ports"
